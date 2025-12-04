@@ -13,7 +13,9 @@ from app.schemas.api_schemas import (
     TrainRequest,
     TrainResponse,
 )
+from app.storage.dataset_storage import DatasetStorage
 from app.storage.model_storage import ModelStorage
+from app.tracking.mlflow_tracker import MLflowTracker
 from app.utils.logger import logger
 
 app = FastAPI(
@@ -23,6 +25,8 @@ app = FastAPI(
 )
 
 storage = ModelStorage()
+dataset_storage = DatasetStorage()
+mlflow_tracker = MLflowTracker()
 
 
 @app.get("/", response_model=StatusResponse)
@@ -125,7 +129,20 @@ async def train_model(request: TrainRequest) -> TrainResponse:
         X_train = np.array(request.X_train)
         y_train = np.array(request.y_train)
 
+        dataset_storage.save_dataset(
+            f"{request.model_name}_train_data", X_train, y_train, push_to_dvc=True
+        )
+
         model.train(X_train, y_train)
+
+        mlflow_tracker.track_training(
+            request.model_name,
+            request.model_type,
+            model,
+            request.hyperparameters,
+            X_train,
+            y_train,
+        )
 
         storage.save_model(request.model_name, model, request.model_type)
 

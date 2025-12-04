@@ -1,24 +1,27 @@
 """Storage for trained models."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import joblib
 
 from app.models.base import BaseMLModel
+from app.storage.s3_storage import S3Storage
 from app.utils.logger import logger
 
 
 class ModelStorage:
     """Storage for managing trained models."""
 
-    def __init__(self, storage_dir: str = "models") -> None:
+    def __init__(self, storage_dir: str = "models", use_s3: bool = True) -> None:
         """
         Initialize model storage.
 
         Args:
             storage_dir: Directory path for storing models
+            use_s3: Whether to use S3 for storage
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(exist_ok=True)
@@ -26,6 +29,16 @@ class ModelStorage:
         self._models: dict[str, BaseMLModel] = {}
         self._metadata: dict[str, dict[str, Any]] = {}
         self._load_metadata()
+
+        self.use_s3 = use_s3 and os.getenv("USE_S3", "true").lower() == "true"
+        self.s3_storage = None
+        if self.use_s3:
+            try:
+                self.s3_storage = S3Storage()
+                logger.info("S3 storage enabled")
+            except Exception as e:
+                logger.warning(f"S3 storage disabled: {e}")
+                self.use_s3 = False
 
     def _load_metadata(self) -> None:
         """Load metadata from disk."""
@@ -58,6 +71,13 @@ class ModelStorage:
         model_path = self.storage_dir / f"{model_name}.joblib"
         joblib.dump(model, model_path)
 
+        if self.use_s3 and self.s3_storage:
+            try:
+                self.s3_storage.upload_file(model_path, f"models/{model_name}.joblib")
+                logger.info(f"Model '{model_name}' uploaded to S3")
+            except Exception as e:
+                logger.warning(f"Failed to upload model to S3: {e}")
+
         self._models[model_name] = model
         self._metadata[model_name] = {
             "type": model_type,
@@ -84,6 +104,14 @@ class ModelStorage:
             return self._models[model_name]
 
         model_path = self.storage_dir / f"{model_name}.joblib"
+
+        if not model_path.exists() and self.use_s3 and self.s3_storage:
+            try:
+                self.s3_storage.download_file(f"models/{model_name}.joblib", model_path)
+                logger.info(f"Model '{model_name}' downloaded from S3")
+            except Exception as e:
+                logger.warning(f"Failed to download model from S3: {e}")
+
         if not model_path.exists():
             raise ValueError(f"Model '{model_name}' not found")
 
@@ -109,6 +137,13 @@ class ModelStorage:
         model_path = self.storage_dir / f"{model_name}.joblib"
         if model_path.exists():
             model_path.unlink()
+
+        if self.use_s3 and self.s3_storage:
+            try:
+                self.s3_storage.delete_file(f"models/{model_name}.joblib")
+                logger.info(f"Model '{model_name}' deleted from S3")
+            except Exception as e:
+                logger.warning(f"Failed to delete model from S3: {e}")
 
         self._models.pop(model_name, None)
         self._metadata.pop(model_name, None)

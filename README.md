@@ -1,60 +1,104 @@
-# HSE FTIAD MLOps HW 1
+# HSE FTIAD MLOps HW 2
 Выполнила: **Белоновская Кристина Константиновна**
 
 ## Структура проекта
 ```
 ├── app/
-│   ├── __init__.py
 │   ├── main.py              # FastAPI приложение
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── base.py          # Базовый класс модели
-│   │   ├── implementations.py  # Реализации моделей
+│   ├── models/              # ML модели
+│   │   ├── base.py          # Базовый класс
+│   │   ├── implementations.py  # Linear/Logistic/RandomForest
 │   │   └── registry.py      # Реестр моделей
 │   ├── schemas/
-│   │   ├── __init__.py
 │   │   └── api_schemas.py   # Pydantic схемы
 │   ├── storage/
-│   │   ├── __init__.py
-│   │   └── model_storage.py # Хранилище моделей
+│   │   ├── model_storage.py # Хранилище моделей (локально + S3)
+│   │   ├── s3_storage.py    # S3/Minio клиент
+│   │   └── dataset_storage.py # DVC датасеты
+│   ├── tracking/
+│   │   └── mlflow_tracker.py # MLflow трекинг
 │   └── utils/
-│       ├── __init__.py
-│       └── logger.py        # Настройка логирования
+│       └── logger.py        # Логирование
 ├── dashboard/
 │   └── streamlit_app.py     # Streamlit дашборд
 ├── tests/
 │   ├── test_api.py          # Тесты API
 │   └── test_models.py       # Тесты моделей
-├── pyproject.toml           # Конфигурация Poetry
+├── .dvc/                    # DVC конфигурация
+│   └── config               # Remote storage (Minio)
+├── scripts/
+│   └── init_minio.sh        # Инициализация Minio buckets
+├── images/                  # Скриншоты для документации
+├── Dockerfile               # Docker образ приложения
+├── docker-compose.yml       # Оркестрация сервисов
+├── pyproject.toml           # Poetry конфигурация
 ├── poetry.lock              # Зафиксированные зависимости
+├── test_client.py           # Клиент для тестирования
 └── README.md
 ```
 
+## Запуск деплоя
 
-## Установка
-1. Установите зависимости с помощью Poetry:
 ```bash
-poetry install
+docker-compose up --build
+```
+Запускет:
+- **MLOps API** - основной сервис.
+- **Minio** - s3 хранилище для моделей и dvc версионирования/хранения датасетов. Модели и Датасеты автоматически сохраняются в S3 при обучении и загружаются оттуда при необходимости. Датасеты обучения версионируются через DVC с remote storage в Minio.
+- **MLflow** - для трекинга экспериментов. Отображаются метрики/метаданные запусков.
+- **PostgreSQL** - хранилище данных для MLflow.
+
+## Доступ к сервисам
+- **API Swagger**: http://localhost:8000/docs
+- **MLflow UI**: http://localhost:5000
+- **Minio Console**: http://localhost:9001 (minioadmin/minioadmin)
+
+## Тестирование работоспособности деплоя
+
+```bash
+python test_client.py
 ```
 
-2. Активируйте виртуальное окружение:
+## Скриншоты сервисов
+
+![Minio - модели в S3](images/minio1.png)
+
+![Minio - датасеты DVC в S3](images/minio2.png)
+
+![MLflow - список экспериментов](images/mlflow1.png)
+
+![MLflow - детали эксперимента](images/mlflow2.png)
+
+---
+---
+---
+# HW 1
+
+## Локальная установка
+
+### Установка зависимостей
+
 ```bash
+poetry install
 poetry shell
 ```
 
-## Запуск
+### Запуск локально
 
-### 1. Запуск API сервера
-
+**API сервер:**
 ```bash
 uvicorn app.main:app --reload
 ```
 
-### 2. Запуск Streamlit дашборда
-
+**Streamlit дашборд:**
 ```bash
-poetry shell
 streamlit run dashboard/streamlit_app.py
+```
+
+**Настройка окружения:**
+```bash
+export USE_S3=false
+export MLFLOW_ENABLED=false
 ```
 
 * API: http://localhost:8000
@@ -126,23 +170,15 @@ streamlit run dashboard/streamlit_app.py
   - `max_depth` (int): максимальная глубина деревьев (по умолчанию: None)
   - `random_state` (int): seed для воспроизводимости (по умолчанию: 42)
 
-## Логирование
-Все операции логируются в:
-- **Консоль**: вывод в stdout
-
-Логи включают:
-- Обучение моделей
-- Предсказания
-- Удаление моделей
-- Ошибки и предупреждения
 
 ## Проверки
-### Проверка стиля кода
+
+### Стиль кода
 ```bash
-poetry run ruff check .
+ruff check .
 ```
 
 ### Тесты
 ```bash
-poetry run pytest tests/ -v
+pytest tests/ -v
 ```
